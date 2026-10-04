@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minigame Địa lí: Bản đồ 34 Tỉnh Thành (2025)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #f0fdf4; 
+            overflow-x: hidden; 
+            touch-action: manipulation; /* Ngăn zoom khi double tap trên mobile */
+        }
+        
+        /* Styles cho các mảnh ghép */
+        .draggable { 
+            cursor: grab; 
+            transition: all 0.2s ease; 
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .draggable:active { cursor: grabbing; transform: scale(0.95); }
+        .draggable.selected {
+            box-shadow: 0 0 0 4px #fbbf24; /* Vòng sáng vàng khi được tap chọn */
+            transform: scale(1.05);
+            background-color: #1d4ed8; /* Xanh đậm hơn */
+        }
+
+        /* Styles cho vùng thả */
+        .drop-zone { min-height: 80px; transition: all 0.3s ease; }
+        .drag-over { background-color: #dbeafe !important; border-color: #3b82f6 !important; transform: scale(1.02); }
+        
+        /* Animations phản hồi */
+        .correct-drop { animation: pulseGreen 0.5s; }
+        .wrong-drop { animation: shakeRed 0.5s; }
+        
+        @keyframes pulseGreen {
+            0% { transform: scale(1); background-color: #22c55e; color: white; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); background-color: white; }
+        }
+        @keyframes shakeRed {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); background-color: #ef4444; color: white; }
+            75% { transform: translateX(8px); background-color: #ef4444; color: white; }
+        }
+        
+        /* Ẩn các màn hình chưa cần thiết */
+        #game-board, #win-screen, #lose-screen { display: none; }
+        
+        /* Tùy chỉnh thanh cuộn cho đẹp hơn */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <div id="start-screen" class="flex flex-col items-center justify-center h-full space-y-6 p-4">
+        <h1 class="text-3xl md:text-5xl font-bold text-green-800 text-center uppercase drop-shadow-md">
+            Chiến dịch quy hoạch:<br>Bản đồ 34 Tỉnh Thành
+        </h1>
+        
+        <div class="bg-white p-6 rounded-2xl shadow-xl w-full max-w-md border-t-4 border-green-500">
+            <h2 class="text-xl font-bold text-center text-gray-800 mb-4">Thông tin học sinh</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-gray-700 font-semibold mb-1">Họ và tên:</label>
+                    <input type="text" id="input-name" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="Nhập họ và tên có dấu...">
+                </div>
+                <div>
+                    <label class="block text-gray-700 font-semibold mb-1">Lớp:</label>
+                    <input type="text" id="input-class" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:outline-none" placeholder="VD: 12A1...">
+                </div>
+                <p id="error-msg" class="text-red-500 text-sm font-semibold hidden text-center">Vui lòng nhập đầy đủ Họ tên và Lớp!</p>
+            </div>
+        </div>
+
+        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded shadow-md w-full max-w-md text-sm md:text-base">
+            <p><strong>Nhiệm vụ:</strong> Kéo thả (hoặc chạm vào) 63 tên tỉnh thành (cũ) vào đúng 34 đơn vị hành chính cấp tỉnh (mới).</p>
+            <p class="mt-2">⏳ Thời gian: 10:00 phút | 🏆 Thưởng: +0.5 Điểm TX</p>
+            <p class="mt-2 text-blue-600 font-semibold italic">💡 Mẹo chơi trên điện thoại: Chạm để chọn tỉnh, sau đó chạm vào ô trống để thả.</p>
+        </div>
+
+        <button onclick="validateAndStart()" class="w-full max-w-md py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-2xl shadow-lg transition-transform transform hover:scale-105 active:scale-95">
+            BẮT ĐẦU CHƠI
+        </button>
+    </div>
+
+    <div id="game-board" class="flex-col h-full hidden p-2 md:p-4">
+        <!-- Header: Thông tin, Thời gian & Điểm số -->
+        <div class="flex flex-wrap justify-between items-center bg-white p-3 md:p-4 rounded-xl shadow-md mb-2 md:mb-4 border-b-4 border-green-500 gap-2">
+            <div class="w-full md:w-auto text-center md:text-left">
+                <p class="font-bold text-gray-800 text-lg md:text-xl"><span id="display-name"></span> - <span id="display-class" class="text-blue-600"></span></p>
+            </div>
+            <div class="flex justify-between w-full md:w-auto md:space-x-8 items-center">
+                <div class="text-lg md:text-2xl font-bold text-gray-700">
+                    Tiến độ: <span id="score" class="text-green-600 text-2xl md:text-3xl">0</span>/63
+                </div>
+                <div class="text-2xl md:text-4xl font-black text-red-600 bg-red-50 px-3 py-1 rounded-lg" id="timer">
+                    10:00
+                </div>
+            </div>
+        </div>
+
+        <!-- Draggable Source (Nơi chứa 63 tỉnh chưa ghép) -->
+        <div class="bg-white p-3 rounded-xl shadow-inner mb-2 md:mb-4 h-40 md:h-48 overflow-y-auto border-2 border-dashed border-gray-300 relative">
+            <h2 class="text-sm md:text-lg font-semibold mb-2 text-gray-600 sticky top-0 bg-white/90 backdrop-blur-sm z-10 pb-1">
+                Kho mảnh ghép (Chọn hoặc Kéo):
+            </h2>
+            <div id="source-container" class="flex flex-wrap gap-1.5 md:gap-2 justify-center md:justify-start"></div>
+        </div>
+
+        <!-- Drop Zones (Lưới 34 tỉnh mới) -->
+        <div class="flex-1 overflow-y-auto pb-4">
+            <div id="drop-zones" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 md:gap-3"></div>
+        </div>
+    </div>
+
+    <!-- Win Screen -->
+    <div id="win-screen" class="fixed inset-0 bg-green-900 bg-opacity-95 flex flex-col items-center justify-center z-50 text-center p-4">
+        <h2 class="text-5xl md:text-7xl font-black text-yellow-400 mb-4 drop-shadow-lg">XUẤT SẮC!</h2>
+        <div class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl max-w-lg w-full">
+            <p class="text-xl md:text-2xl text-gray-800 mb-2">Chúc mừng học sinh:</p>
+            <p class="text-3xl md:text-4xl font-bold text-blue-700 mb-4"><span id="win-name"></span></p>
+            <p class="text-xl text-gray-600 mb-6">Lớp: <span id="win-class" class="font-bold text-gray-800"></span></p>
+            <p class="text-lg text-green-600 mb-4 font-semibold">Đã quy hoạch thành công 100% bản đồ!</p>
+            <div class="animate-bounce mb-6">
+                <span class="text-4xl md:text-6xl font-black text-red-600 drop-shadow-md">+0.5 ĐIỂM</span>
+            </div>
+            <p class="text-sm text-gray-500 mb-6">(Hãy chụp ảnh màn hình này lại làm minh chứng nhé)</p>
+            <button onclick="location.reload()" class="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg text-lg w-full transition-colors">Chơi lại từ đầu</button>
+        </div>
+    </div>
+
+    <!-- Lose Screen (Thay cho Alert khi hết giờ) -->
+    <div id="lose-screen" class="fixed inset-0 bg-red-900 bg-opacity-95 flex flex-col items-center justify-center z-50 text-center p-4">
+        <h2 class="text-5xl md:text-7xl font-black text-white mb-4 drop-shadow-lg">HẾT GIỜ!</h2>
+        <div class="bg-white p-6 md:p-8 rounded-2xl shadow-2xl max-w-lg w-full">
+            <p class="text-2xl text-gray-800 mb-4">Rất tiếc, <span id="lose-name" class="font-bold"></span> chưa hoàn thành thử thách.</p>
+            <p class="text-xl mb-6">Tiến độ của em: <span id="lose-score" class="font-bold text-red-600 text-3xl"></span> / 63</p>
+            <p class="text-gray-600 mb-6">Hãy thao tác nhanh tay và chính xác hơn ở lần sau nhé!</p>
+            <button onclick="location.reload()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xl w-full transition-colors shadow-lg">Thử lại ngay</button>
+        </div>
+    </div>
+
+    <script>
+        const newProvinces = [
+            { id: "p1", name: "Tuyên Quang", accepts: ["Tuyên Quang", "Hà Giang"] },
+            { id: "p2", name: "Lào Cai", accepts: ["Lào Cai", "Yên Bái"] },
+            { id: "p3", name: "Thái Nguyên", accepts: ["Thái Nguyên", "Bắc Kạn"] },
+            { id: "p4", name: "Phú Thọ", accepts: ["Phú Thọ", "Vĩnh Phúc", "Hòa Bình"] },
+            { id: "p5", name: "Bắc Ninh", accepts: ["Bắc Ninh", "Bắc Giang"] },
+            { id: "p6", name: "Hưng Yên", accepts: ["Hưng Yên", "Thái Bình"] },
+            { id: "p7", name: "Hải Phòng", accepts: ["Hải Phòng", "Hải Dương"] },
+            { id: "p8", name: "Ninh Bình", accepts: ["Ninh Bình", "Hà Nam", "Nam Định"] },
+            { id: "p9", name: "Quảng Trị", accepts: ["Quảng Trị", "Quảng Bình"] },
+            { id: "p10", name: "Đà Nẵng", accepts: ["Đà Nẵng", "Quảng Nam"] },
+            { id: "p11", name: "Quảng Ngãi", accepts: ["Quảng Ngãi", "Kon Tum"] },
+            { id: "p12", name: "Gia Lai", accepts: ["Gia Lai", "Bình Định"] },
+            { id: "p13", name: "Khánh Hòa", accepts: ["Khánh Hòa", "Ninh Thuận"] },
+            { id: "p14", name: "Lâm Đồng", accepts: ["Lâm Đồng", "Đắk Nông", "Bình Thuận"] },
+            { id: "p15", name: "Đắk Lắk", accepts: ["Đắk Lắk", "Phú Yên"] },
+            { id: "p16", name: "TP. Hồ Chí Minh", accepts: ["TP. Hồ Chí Minh", "Bà Rịa - Vũng Tàu", "Bình Dương"] },
+            { id: "p17", name: "Đồng Nai", accepts: ["Đồng Nai", "Bình Phước"] },
+            { id: "p18", name: "Tây Ninh", accepts: ["Tây Ninh", "Long An"] },
+            { id: "p19", name: "Cần Thơ", accepts: ["Cần Thơ", "Sóc Trăng", "Hậu Giang"] },
+            { id: "p20", name: "Vĩnh Long", accepts: ["Vĩnh Long", "Bến Tre", "Trà Vinh"] },
+            { id: "p21", name: "Đồng Tháp", accepts: ["Đồng Tháp", "Tiền Giang"] },
+            { id: "p22", name: "Cà Mau", accepts: ["Cà Mau", "Bạc Liêu"] },
+            { id: "p23", name: "An Giang", accepts: ["An Giang", "Kiên Giang"] },
+            { id: "p24", name: "Hà Nội", accepts: ["Hà Nội"] },
+            { id: "p25", name: "TP Huế", accepts: ["Thừa Thiên Huế"] },
+            { id: "p26", name: "Lai Châu", accepts: ["Lai Châu"] },
+            { id: "p27", name: "Điện Biên", accepts: ["Điện Biên"] },
+            { id: "p28", name: "Sơn La", accepts: ["Sơn La"] },
+            { id: "p29", name: "Lạng Sơn", accepts: ["Lạng Sơn"] },
+            { id: "p30", name: "Quảng Ninh", accepts: ["Quảng Ninh"] },
+            { id: "p31", name: "Thanh Hóa", accepts: ["Thanh Hóa"] },
+            { id: "p32", name: "Nghệ An", accepts: ["Nghệ An"] },
+            { id: "p33", name: "Hà Tĩnh", accepts: ["Hà Tĩnh"] },
+            { id: "p34", name: "Cao Bằng", accepts: ["Cao Bằng"] }
+        ];
+
+        let oldProvinces = [];
+        newProvinces.forEach(np => {
+            np.accepts.forEach(op => oldProvinces.push({ id: op, name: op, targetId: np.id }));
+        });
+
+        // Xáo trộn ngẫu nhiên mảng tỉnh thành
+        oldProvinces = oldProvinces.sort(() => Math.random() - 0.5);
+
+        // State variables
+        let score = 0;
+        let timeLeft = 600; // 10 phút
+        let timerInterval;
+        let audioCtx;
+        
+        let studentInfo = { name: '', class: '' };
+        
+        // Biến phục vụ cho tính năng "Chạm để chọn - Chạm để thả" trên Mobile
+        let selectedDragId = null;
+
+        // Sinh âm thanh tổng hợp bằng Web Audio API
+        function playSound(isCorrect) {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            if (isCorrect) {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1500, audioCtx.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            } else {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.2);
+            }
+        }
+
+        function validateAndStart() {
+            const nameInput = document.getElementById('input-name').value.trim();
+            const classInput = document.getElementById('input-class').value.trim();
+            const errorMsg = document.getElementById('error-msg');
+
+            if (!nameInput || !classInput) {
+                errorMsg.classList.remove('hidden');
+                return;
+            }
+
+            errorMsg.classList.add('hidden');
+            studentInfo.name = nameInput;
+            studentInfo.class = classInput;
+
+            // Hiển thị thông tin lên Header và Win/Lose screen
+            document.getElementById('display-name').innerText = studentInfo.name;
+            document.getElementById('display-class').innerText = studentInfo.class;
+            document.getElementById('win-name').innerText = studentInfo.name;
+            document.getElementById('win-class').innerText = studentInfo.class;
+            document.getElementById('lose-name').innerText = studentInfo.name;
+
+            startGame();
+        }
+
+        function startGame() {
+            // Mở AudioContext khi có tương tác người dùng
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Chuyển màn hình
+            document.getElementById('start-screen').style.display = 'none';
+            document.getElementById('game-board').style.display = 'flex';
+            
+            renderGame();
+            startTimer();
+        }
+
+        function renderGame() {
+            const sourceContainer = document.getElementById('source-container');
+            const dropZonesContainer = document.getElementById('drop-zones');
+            
+            // Render 63 Draggables (Mảnh ghép)
+            oldProvinces.forEach(op => {
+                const el = document.createElement('div');
+                el.className = 'draggable bg-blue-600 text-white px-2 py-1 md:px-3 md:py-2 rounded-lg text-sm md:text-base font-semibold shadow hover:bg-blue-700 transition-colors';
+                el.draggable = true;
+                el.id = `drag-${op.id}`;
+                el.innerText = op.name;
+                
+                // Hỗ trợ Kéo thả (PC)
+                el.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', op.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    // Xóa state "chạm" nếu người dùng quyết định kéo
+                    clearSelection();
+                });
+
+                // Hỗ trợ "Chạm để Chọn" (Mobile)
+                el.addEventListener('click', () => {
+                    // Nếu thẻ đã được thả đúng thì không click được nữa
+                    if (el.parentElement.id !== 'source-container') return;
+
+                    if (selectedDragId === op.id) {
+                        // Bỏ chọn nếu click lại chính nó
+                        clearSelection();
+                    } else {
+                        // Chọn thẻ mới
+                        clearSelection();
+                        selectedDragId = op.id;
+                        el.classList.add('selected');
+                        // Tự động cuộn lưới đích vào tầm nhìn nếu trên mobile (tùy chọn)
+                    }
+                });
+
+                sourceContainer.appendChild(el);
+            });
+
+            // Render 34 Drop Zones (Vùng thả)
+            newProvinces.forEach(np => {
+                const zone = document.createElement('div');
+                zone.className = 'drop-zone bg-white border-2 border-gray-300 rounded-xl p-2 md:p-3 flex flex-col items-center shadow-sm relative cursor-pointer';
+                zone.dataset.targetId = np.id;
+                zone.dataset.accepts = JSON.stringify(np.accepts);
+                
+                const title = document.createElement('div');
+                title.className = 'font-bold text-gray-800 mb-2 border-b-2 border-green-200 w-full text-center pb-1 text-xs md:text-sm';
+                title.innerText = np.name;
+                
+                const dropArea = document.createElement('div');
+                dropArea.className = 'drop-area w-full flex flex-col gap-1 justify-center min-h-[40px] items-center';
+                dropArea.id = `zone-${np.id}`;
+                
+                zone.appendChild(title);
+                zone.appendChild(dropArea);
+                
+                // Hỗ trợ Kéo thả (PC)
+                zone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    zone.classList.add('drag-over');
+                });
+                
+                zone.addEventListener('dragleave', () => {
+                    zone.classList.remove('drag-over');
+                });
+                
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    zone.classList.remove('drag-over');
+                    const draggedId = e.dataTransfer.getData('text/plain');
+                    handleDropAttempt(zone, draggedId);
+                });
+
+                // Hỗ trợ "Chạm để Thả" (Mobile)
+                zone.addEventListener('click', () => {
+                    if (selectedDragId) {
+                        handleDropAttempt(zone, selectedDragId);
+                        clearSelection();
+                    }
+                });
+                
+                dropZonesContainer.appendChild(zone);
+            });
+        }
+
+        function clearSelection() {
+            if (selectedDragId) {
+                const prevEl = document.getElementById(`drag-${selectedDragId}`);
+                if (prevEl) prevEl.classList.remove('selected');
+                selectedDragId = null;
+            }
+        }
+
+        function handleDropAttempt(zoneElement, draggedId) {
+            const acceptsList = JSON.parse(zoneElement.dataset.accepts);
+            
+            if (acceptsList.includes(draggedId)) {
+                // Thả đúng
+                playSound(true);
+                zoneElement.classList.remove('wrong-drop');
+                void zoneElement.offsetWidth; // Trigger reflow để restart animation
+                zoneElement.classList.add('correct-drop');
+                
+                const draggedEl = document.getElementById(`drag-${draggedId}`);
+                draggedEl.draggable = false;
+                // Đổi style khi vào đúng ô
+                draggedEl.className = 'bg-green-500 text-white px-1 py-1 w-full rounded text-xs font-medium text-center shadow-inner break-words';
+                
+                const dropArea = zoneElement.querySelector('.drop-area');
+                dropArea.appendChild(draggedEl);
+                
+                score++;
+                document.getElementById('score').innerText = score;
+                checkWin();
+            } else {
+                // Thả sai
+                playSound(false);
+                zoneElement.classList.remove('correct-drop');
+                void zoneElement.offsetWidth;
+                zoneElement.classList.add('wrong-drop');
+            }
+        }
+
+        function startTimer() {
+            const timerEl = document.getElementById('timer');
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+                const s = (timeLeft % 60).toString().padStart(2, '0');
+                timerEl.innerText = `${m}:${s}`;
+                
+                if (timeLeft <= 60) {
+                    timerEl.classList.replace('text-red-600', 'text-red-800');
+                    timerEl.classList.add('animate-pulse');
+                }
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    document.getElementById('lose-score').innerText = score;
+                    document.getElementById('game-board').style.display = 'none';
+                    document.getElementById('lose-screen').style.display = 'flex';
+                }
+            }, 1000);
+        }
+
+        function checkWin() {
+            if (score === 63) {
+                clearInterval(timerInterval);
+                setTimeout(() => {
+                    document.getElementById('game-board').style.display = 'none';
+                    document.getElementById('win-screen').style.display = 'flex';
+                    // Giai điệu chiến thắng
+                    playSound(true);
+                    setTimeout(() => playSound(true), 150);
+                    setTimeout(() => playSound(true), 300);
+                    setTimeout(() => playSound(true), 450);
+                }, 600);
+            }
+        }
+    </script>
+</body>
+</html>
